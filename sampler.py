@@ -12,7 +12,7 @@ class Sampler(nn.Module):
       self.L = max_len
       self.mask_id = token_size
       self.beta = 0.9
-      self.register_buffer('ind_num', (self.gamma(torch.arange(0,51))*self.L).round().long().clamp_min(8))
+      self.register_buffer('ind_num', (self.gamma(torch.arange(0,51))*self.L).round().long().clamp_min(0))
       self.register_buffer('mask',torch.ones(self.batch_size,self.L).long() * self.mask_id)
   def sample_t(self,t=None) -> torch.Tensor:
       if t == -1:
@@ -26,7 +26,7 @@ class Sampler(nn.Module):
       return x,x_orig,t
 
   def gamma(self,r:torch.Tensor) -> torch.Tensor:
-      return (r * torch.pi / 2 /self.steps).cos()
+      return (r * torch.pi / 2 /self.steps).sin()
 
   @torch.no_grad()
   def add_noise(self, x, t, noise_mask=None):
