@@ -133,7 +133,8 @@ if __name__ == '__main__':
         devices=1,
         precision=16,
         max_epochs=1000,
-        callbacks=callbacks
+        callbacks=callbacks,
+        amp_backend="native"
     )
 
 
