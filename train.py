@@ -126,8 +126,8 @@ d = EnCodecData(data_list)
 print(len(data_list))
 
 train, val = torch.utils.data.random_split(d, [int(len(d)*0.9),len(d)-int(len(d)*0.9)])
-train_loader = DataLoader(train, batch_size=1, shuffle=True)
-val_loader = DataLoader(val, batch_size=1, shuffle=False)
+train_loader = DataLoader(train, sampler=RepeatingSampler(train,batch_size,shuffle=True))
+val_loader = DataLoader(val, sampler=RepeatingSampler(val`,batch_size,shuffle=True))
 
 # training
 trainer = Trainer(
