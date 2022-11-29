@@ -2,13 +2,14 @@ from os import X_OK
 from torch.nn.init import xavier_uniform_
 import math,torch
 from functools import partial
-from torch import nn, einsum
+from torch import nn, einsum, rand_like
 import torch.nn.functional as F
 from torch.fft import rfft, irfft
 from einops import rearrange
 from scipy.fftpack import next_fast_len
 from positional_encodings.torch_encodings import PositionalEncodingPermute1D,PositionalEncoding2D,PositionalEncoding1D, Summer
 import numpy as np
+import argparse
 
 # functions
 
@@ -137,7 +138,7 @@ class SingleHeadedAttention(nn.Module):
 
         self.chunk_size = chunk_size
 
-        self.attn_fn = partial(F.softmax, dim = -1) if not laplacian_attn_fn else `()
+        self.attn_fn = partial(F.softmax, dim = -1) if not laplacian_attn_fn else LaplacianAttnFn()
 
         self.rel_pos_bias = T5RelativePositionBias(causal = causal, scale = dim_qk ** 0.5)
 
@@ -161,10 +162,10 @@ class SingleHeadedAttention(nn.Module):
         if self.chunk_size > 0:
           assert seq_len % self.chunk_size == 0
           chunks = x.shape[-2] // self.chunk_size
-          x = rearrange(x,'b (k c) d -> b k c d')
+          x = rearrange(x,'b (k c) d -> b k c d',k=chunks,c=self.chunk_size)
           if v_input.shape != x.shape:
             assert v_input.shape[-2] % self.chunk_size == 0
-            v_input = rearrange(v_input,'b (k c) d -> b k c d')
+            v_input = rearrange(v_input,'b (k c) d -> b k c d',k=chunks,c=self.chunk_size)
         else:
           x = x.unsqueeze(-3)
           v_input = v_input.unsqueeze(-3)
@@ -402,4 +403,32 @@ class Mega(nn.Module):
 
         x = self.to_logits(x)
         return x
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        prog = 'encodec-gen',
+        description = 'What the program does',
+        epilog = 'Text at the bottom of help')
+    parser.add_argument('-c','--code',default=1024)
+    parser.add_argument('-d','--depth',default=8)
+    parser.add_argument('-l','--length',default=1024)
+    parser.add_argument('-b','--batch',default=4)
+    parser.add_argument('-m','--model_dim',default=128)
+    parser.add_argument('-ml','--model_enc_layers',default=6)
+    parser.add_argument('-ch','--chunk',default=128)
+    parser.add_argument('-lr','--initial_lr',default=3e-4)
+    parser.add_argument('-ck','--checkpoint_steps',default=1000)
+    parser.add_argument('-w','--warmup_steps',default=5000)
+    parser.add_argument('-s','--save_path',default='./models')
+    args = parser.parse_args()
+    assert args.length*args.depth % args.chunk == 0
+
+    # model
+    
+    datalist = [torch.randint(0,args.code,(4,args.depth,args.length)) for _ in range(10)]
   
+
+    model = MegaLayer(dim=args.model_dim,attn_dim_qk=args.model_dim//2,attn_dim_value=args.model_dim*2,laplacian_attn_fn=True,causal=False,chunk_size=args.chunk)
+    
+    print([model(torch.rand(4,512,128,dtype=torch.float32) * _) for _ in range(1,11)])
