@@ -46,7 +46,7 @@ def augment_data(length, codebook_dim=8):
         l = []
         for data in data_list:
             data = data[:codebook_dim,:]
-            i = -1 if data.size(-1)%length == 0 else None
+            i = None if data.size(-1)%length == 0 else -1
             l += data.split(length,dim=-1)[:i]
         return l
     return to_return
@@ -61,15 +61,18 @@ class RepeatingSampler():
         if self.rng is not None:
             self.rng.shuffle(tmp,axis=0)
         for i in range(len(self.data_source)):
-            yield tmp[i,:]
+            yield (tmp[i,:].tolist())
     def __len__(self) -> int:
         return len(self.data_source)
 
 class EnCodecData(Dataset):
     def __init__(self, data_list, transforms=None):
-        self.dic = data_list
         if transforms is not None:
             self.dic = transforms(data_list)
+        else:
+            self.dic = data_list
+        self.dic = torch.stack(self.dic,dim=0)
+        print(self.dic.shape)
     def __len__(self):
         return len(self.dic)
 
