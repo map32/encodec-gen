@@ -137,7 +137,7 @@ class SingleHeadedAttention(nn.Module):
 
         self.chunk_size = chunk_size
 
-        self.attn_fn = partial(F.softmax, dim = -1) if not laplacian_attn_fn else LaplacianAttnFn()
+        self.attn_fn = partial(F.softmax, dim = -1) if not laplacian_attn_fn else `()
 
         self.rel_pos_bias = T5RelativePositionBias(causal = causal, scale = dim_qk ** 0.5)
 
@@ -161,10 +161,10 @@ class SingleHeadedAttention(nn.Module):
         if self.chunk_size > 0:
           assert seq_len % self.chunk_size == 0
           chunks = x.shape[-2] // self.chunk_size
-          x = x.reshape(*x.shape[:-2],chunks, self.chunk_size, x.shape[-1])
+          x = rearrange(x,'b (k c) d -> b k c d')
           if v_input.shape != x.shape:
             assert v_input.shape[-2] % self.chunk_size == 0
-            v_input = v_input.reshape(*v_input.shape[:-2],chunks, self.chunk_size, v_input.shape[-1])
+            v_input = rearrange(v_input,'b (k c) d -> b k c d')
         else:
           x = x.unsqueeze(-3)
           v_input = v_input.unsqueeze(-3)
@@ -320,8 +320,17 @@ class MegaLayer(nn.Module):
 
         H = F.silu(ema_output @ self.Wh + gated_attn_output @ self.Uh + self.bh)
         # update gate
+        
+        ans = update_gate * H + (1 - update_gate) * residual
 
-        return update_gate * H + (1 - update_gate) * residual
+        if(torch.isnan(ans[0,0,0]).item()):
+            print('residual/x')
+            print(residual.shape,residual)
+            print('ema_out')
+            print(ema_output.shape,ema_output)
+            print('attn_out')
+            print(attn_output.shape,attn_output)
+        return ans
 
 # Mega
 
@@ -385,7 +394,6 @@ class Mega(nn.Module):
             mega_maybe_postnorm = mega_norm if post_norm else identity
             ff_maybe_postnorm = ff_norm if post_norm else identity
             x = mega_layer(mega_maybe_prenorm(x), x)
-
             x = mega_maybe_postnorm(x)
 
             x = ff(ff_maybe_prenorm(x)) + x
