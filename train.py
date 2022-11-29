@@ -33,7 +33,7 @@ class LitAutoEncoder(pl.LightningModule):
         attn_dim_qk = model_dim // 2,            # dimension of queries / keys in attention
         attn_dim_value = model_dim*2,        # dimensino of values in attention
         laplacian_attn_fn = True,    # whether to use softmax (false) or laplacian attention activation fn (true)
-        causal=False,
+        causal=causal,
         codebook_size = depth,
         chunk_size = chunk)
         self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
@@ -100,6 +100,7 @@ if __name__ == '__main__':
     parser.add_argument('-m','--model_dim',default=128)
     parser.add_argument('-ml','--model_enc_layers',default=6)
     parser.add_argument('-ch','--chunk',default=1024)
+    parser.add_argument('-ca','--causal',default=False)
     parser.add_argument('-lr','--initial_lr',default=3e-4)
     parser.add_argument('-ck','--checkpoint_steps',default=1000)
     parser.add_argument('-w','--warmup_steps',default=5000)
