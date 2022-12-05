@@ -36,7 +36,7 @@ class LitAutoEncoder(pl.LightningModule):
         causal=causal,
         codebook_size = depth,
         chunk_size = chunk)
-        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1,ignore_index=code*depth)
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
         self.lr = initial_lr
         self.batch = batch
 
@@ -44,7 +44,7 @@ class LitAutoEncoder(pl.LightningModule):
       t = torch.randint(1,self.sampler.steps+1,(1,)).item() if step is None else step
       x = self.denoiser.preprocess(x)
       if nmask is None:
-            nmask = torch.randint_like(x,self.sampler.token_size-1)
+            nmask = torch.randint_like(x,self.sampler.token_size)
       x = x.view(x.size(0), -1)
       print(x.shape)
       x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
@@ -56,23 +56,26 @@ class LitAutoEncoder(pl.LightningModule):
       return torch.optim.AdamW(self.parameters(), lr=self.lr, eps=3e-7, weight_decay=1e-3)
 
     def training_step(self, train_batch, batch_idx):
+      tmax = self.global_step // 1000 + 1
       x = train_batch
-      t = torch.randint(1,self.sampler.steps+1,(1,)).item()
+      #t = torch.randint(1,self.sampler.steps+1,(1,)).clip(max=tmax).item()
+      t = tmax
       x = self.denoiser.preprocess(x)
-      nmask = torch.randint_like(x,self.sampler.token_size-1)
+      nmask = torch.randint_like(x,self.sampler.token_size)
       x = x.view(x.size(0), -1)
       x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
       x_pred = self.denoiser(x_masknoised).permute(0,2,1)
-      print(x_masked.shape,x_pred.shape,x_masked,x_pred)
       loss = self.criterion(x_pred,x)
       self.log('train_loss', loss)
       return loss
 
     def validation_step(self, val_batch, batch_idx):
+      tmax = self.global_step // 1000 + 1
       x = val_batch
-      t = torch.randint(1,self.sampler.steps+1,(1,)).item()
+      #t = torch.randint(1,self.sampler.steps+1,(1,)).clip(max=tmax).item()
+      t = tmax
       x = self.denoiser.preprocess(x)
-      nmask = torch.randint_like(x,self.sampler.token_size-1)
+      nmask = torch.randint_like(x,self.sampler.token_size)
       x = x.view(x.size(0), -1)
       x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
       x_pred = self.denoiser(x_masknoised).permute(0,2,1)
@@ -100,12 +103,12 @@ if __name__ == '__main__':
     parser.add_argument('-b','--batch',default=4)
     parser.add_argument('-m','--model_dim',default=128)
     parser.add_argument('-ml','--model_enc_layers',default=6)
-    parser.add_argument('-ch','--chunk',default=1024)
+    parser.add_argument('-ch','--chunk',default=512)
     parser.add_argument('-ca','--causal',default=False)
     parser.add_argument('-lr','--initial_lr',default=5e-4)
     parser.add_argument('-ck','--checkpoint_steps',default=1000)
     parser.add_argument('-w','--warmup_steps',default=5000)
-    parser.add_argument('-s','--save_path',default='./models')
+    parser.add_argument('-s','--save_path',default='/content/drive/MyDrive/models')
     args = parser.parse_args()
     assert args.length*args.depth % args.chunk == 0
 
@@ -132,11 +135,10 @@ if __name__ == '__main__':
     trainer = Trainer(
         accelerator='gpu',
         devices=1,
-        max_epochs=1000,
+        max_steps=1000*30,
         callbacks=callbacks,
         amp_backend="native",
-        overfit_batches=4,
-        gradient_clip_val=0.5
+        gradient_clip_val=0.7
     )
     print(train[0].shape)
     trainer.fit(model, train_loader, val_loader)
