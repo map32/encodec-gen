@@ -36,7 +36,7 @@ class LitAutoEncoder(pl.LightningModule):
         causal=causal,
         codebook_size = depth,
         chunk_size = chunk)
-        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1,ignore_index=code*depth)
         self.lr = initial_lr
         self.batch = batch
 
@@ -46,38 +46,37 @@ class LitAutoEncoder(pl.LightningModule):
       if nmask is None:
             nmask = torch.randint_like(x,self.sampler.token_size-1)
       x = x.view(x.size(0), -1)
-      x_masked = self.sampler.add_noise(x,t,nmask)
-      x_pred = self.denoiser(x_masked)
-      x_pred = x_pred.permute(0,2,1)
+      print(x.shape)
+      x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
+      x_pred = self.denoiser(x_masknoised).permute(0,2,1)
       loss = self.criterion(x_pred,x)
-      return x,x_masked,loss
+      return x_pred,x_masknoised,x_masked,loss
 
     def configure_optimizers(self):
       return torch.optim.AdamW(self.parameters(), lr=self.lr, eps=3e-7, weight_decay=1e-3)
 
     def training_step(self, train_batch, batch_idx):
       x = train_batch
-      print(x,batch_idx)
       t = torch.randint(1,self.sampler.steps+1,(1,)).item()
       x = self.denoiser.preprocess(x)
       nmask = torch.randint_like(x,self.sampler.token_size-1)
       x = x.view(x.size(0), -1)
-      x_masked = self.sampler.add_noise(x,t,nmask)
-      x_pred = self.denoiser(x_masked).permute(0,2,1)
-      loss = self.criterion(x_pred,x)
+      x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
+      x_pred = self.denoiser(x_masknoised).permute(0,2,1)
+      print(x_masked.shape,x_pred.shape,x_masked,x_pred)
+      loss = self.criterion(x_pred,x_masked)
       self.log('train_loss', loss)
       return loss
 
     def validation_step(self, val_batch, batch_idx):
       x = val_batch
-      print(x,batch_idx)
       t = torch.randint(1,self.sampler.steps+1,(1,)).item()
       x = self.denoiser.preprocess(x)
       nmask = torch.randint_like(x,self.sampler.token_size-1)
       x = x.view(x.size(0), -1)
-      x_masked = self.sampler.add_noise(x,t,nmask)
-      x_pred = self.denoiser(x_masked).permute(0,2,1)
-      loss = self.criterion(x_pred,x)
+      x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
+      x_pred = self.denoiser(x_masknoised).permute(0,2,1)
+      loss = self.criterion(x_pred,x_masked)
       self.log('val_loss', loss)
       return loss
 
@@ -96,14 +95,14 @@ if __name__ == '__main__':
     
     parser.add_argument('filepath')
     parser.add_argument('-c','--code',default=1024)
-    parser.add_argument('-d','--depth',default=8)
+    parser.add_argument('-d','--depth',default=4)
     parser.add_argument('-l','--length',default=1024)
     parser.add_argument('-b','--batch',default=4)
     parser.add_argument('-m','--model_dim',default=128)
     parser.add_argument('-ml','--model_enc_layers',default=6)
     parser.add_argument('-ch','--chunk',default=1024)
     parser.add_argument('-ca','--causal',default=False)
-    parser.add_argument('-lr','--initial_lr',default=4e-5)
+    parser.add_argument('-lr','--initial_lr',default=5e-4)
     parser.add_argument('-ck','--checkpoint_steps',default=1000)
     parser.add_argument('-w','--warmup_steps',default=5000)
     parser.add_argument('-s','--save_path',default='./models')
@@ -124,7 +123,7 @@ if __name__ == '__main__':
     dataset = EnCodecData(datalist,transforms=transforms)
     print(dataset[0])
     
-    train, val = torch.utils.data.random_split(dataset, [int(len(dataset)*0.95),len(dataset)-int(len(dataset)*0.95)])
+    train, val = torch.utils.data.random_split(dataset, [int(len(dataset)*0.99),len(dataset)-int(len(dataset)*0.99)])
     train_loader = DataLoader(train, batch_sampler=RepeatingSampler(train,args.batch,shuffle=True))
     val_loader = DataLoader(val, batch_sampler=RepeatingSampler(val,args.batch,shuffle=False))
     
@@ -133,14 +132,13 @@ if __name__ == '__main__':
     trainer = Trainer(
         accelerator='gpu',
         devices=1,
-        precision=16,
         max_epochs=1000,
         callbacks=callbacks,
-        amp_backend="native"
+        amp_backend="native",
+        overfit_batches=4,
+        gradient_clip_val=0.5
     )
-
-
-
+    print(train[0].shape)
     trainer.fit(model, train_loader, val_loader)
     
 
