@@ -29,10 +29,13 @@ class Sampler(nn.Module):
       return (r * torch.pi / 2 /self.steps).sin()
 
   @torch.no_grad()
-  def add_noise(self, x, t, noise_mask=None):
+  def add_noise(self, x, t, noise_mask=None, discrete_t=False):
     if len(x.size()) == 3:
         x = rearrange(x,'b q l -> b (q l)')
-    indices_to_pick = self.ind_num[t].item()
+    if discrete_t:
+        indices_to_pick = self.ind_num[t].item()
+    else:
+        indices_to_pick = self.gamma(torch.rand(1,)*self.steps.clip(min=1e-1))
     noised_indices = int((1 - self.beta)*indices_to_pick)
     mask = self.mask
     if noise_mask is None:
