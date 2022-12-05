@@ -14,7 +14,7 @@ import pickle
 import argparse
 
 class LitAutoEncoder(pl.LightningModule):
-    def __init__(self, code=1024, depth=8, length=512, model_dim=128, model_enc_layers = 6, chunk = 512, steps=50, batch=4, initial_lr=5e-4):
+    def __init__(self, code=1024, depth=8, length=512, model_dim=128, model_enc_layers = 6, causal = False, chunk = 512, steps=50, batch=4, initial_lr=5e-4,**kwargs):
         super().__init__()
         codebook_size=code
         codebook_num=depth
@@ -30,7 +30,7 @@ class LitAutoEncoder(pl.LightningModule):
         dim = model_dim,                   # model dimensions
         depth = model_enc_layers,                   # depth
         ema_heads = 16,              # number of EMA heads
-        attn_dim_qk = model_dim // 2,            # dimension of queries / keys in attention
+        attn_dim_qk = model_dim,            # dimension of queries / keys in attention
         attn_dim_value = model_dim*2,        # dimensino of values in attention
         laplacian_attn_fn = True,    # whether to use softmax (false) or laplacian attention activation fn (true)
         causal=causal,
@@ -53,10 +53,11 @@ class LitAutoEncoder(pl.LightningModule):
       return x,x_masked,loss
 
     def configure_optimizers(self):
-      return torch.optim.AdamW(self.parameters(), lr=self.lr)
+      return torch.optim.AdamW(self.parameters(), lr=self.lr, eps=3e-7, weight_decay=1e-3)
 
     def training_step(self, train_batch, batch_idx):
       x = train_batch
+      print(x,batch_idx)
       t = torch.randint(1,self.sampler.steps+1,(1,)).item()
       x = self.denoiser.preprocess(x)
       nmask = torch.randint_like(x,self.sampler.token_size-1)
@@ -69,6 +70,7 @@ class LitAutoEncoder(pl.LightningModule):
 
     def validation_step(self, val_batch, batch_idx):
       x = val_batch
+      print(x,batch_idx)
       t = torch.randint(1,self.sampler.steps+1,(1,)).item()
       x = self.denoiser.preprocess(x)
       nmask = torch.randint_like(x,self.sampler.token_size-1)
@@ -92,7 +94,7 @@ if __name__ == '__main__':
         description = 'What the program does',
         epilog = 'Text at the bottom of help')
     
-    parser.add_argument('filepath',required=True)
+    parser.add_argument('filepath')
     parser.add_argument('-c','--code',default=1024)
     parser.add_argument('-d','--depth',default=8)
     parser.add_argument('-l','--length',default=1024)
@@ -101,30 +103,30 @@ if __name__ == '__main__':
     parser.add_argument('-ml','--model_enc_layers',default=6)
     parser.add_argument('-ch','--chunk',default=1024)
     parser.add_argument('-ca','--causal',default=False)
-    parser.add_argument('-lr','--initial_lr',default=3e-4)
+    parser.add_argument('-lr','--initial_lr',default=4e-5)
     parser.add_argument('-ck','--checkpoint_steps',default=1000)
     parser.add_argument('-w','--warmup_steps',default=5000)
     parser.add_argument('-s','--save_path',default='./models')
     args = parser.parse_args()
-    assert args.length*args.depth % args.chunk_size == 0
+    assert args.length*args.depth % args.chunk == 0
 
     # model
-    model = LitAutoEncoder(**args)
+    model = LitAutoEncoder(**vars(args))
     
     cached_path = args.filepath
     try:
         datalist = torch.load(cached_path)
     except:
         print(cached_path+' does not exist.')
-        break
     
-    transforms = data_augment(args.length,args.depth)
+    transforms = augment_data(args.length,args.depth)
     
     dataset = EnCodecData(datalist,transforms=transforms)
+    print(dataset[0])
     
-    train, val = torch.utils.data.random_split(d, [int(len(d)*0.95),len(d)-int(len(d)*0.95)])
-    train_loader = DataLoader(train, sampler=RepeatingSampler(train,batch_size,shuffle=True))
-    val_loader = DataLoader(val, sampler=RepeatingSampler(val`,batch_size,shuffle=False))
+    train, val = torch.utils.data.random_split(dataset, [int(len(dataset)*0.95),len(dataset)-int(len(dataset)*0.95)])
+    train_loader = DataLoader(train, batch_sampler=RepeatingSampler(train,args.batch,shuffle=True))
+    val_loader = DataLoader(val, batch_sampler=RepeatingSampler(val,args.batch,shuffle=False))
     
     callbacks=[ModelCheckpoint(dirpath=args.save_path,monitor='train_loss',mode='min',every_n_train_steps=args.checkpoint_steps)]
     
