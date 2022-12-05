@@ -29,28 +29,33 @@ class Sampler(nn.Module):
       return (r * torch.pi / 2 /self.steps).sin()
 
   @torch.no_grad()
-  def add_noise(self, x, t, noise_mask=None, discrete_t=False):
+  def add_noise(self, x, t, noise_mask=None, discrete_t=True):
     if len(x.size()) == 3:
         x = rearrange(x,'b q l -> b (q l)')
     if discrete_t:
         indices_to_pick = self.ind_num[t].item()
     else:
-        indices_to_pick = self.gamma(torch.rand(1,)*self.steps.clip(min=1e-1))
+        indices_to_pick = self.gamma(torch.rand(1,)*self.steps)*self.L
+        indices_to_pick = indices_to_pick.round().long().clip(min=1,max=self.L).item()
     noised_indices = int((1 - self.beta)*indices_to_pick)
     mask = self.mask
     if noise_mask is None:
         noise_mask = torch.randint(0,self.token_size,(self.batch_size,self.L)).to(x)
-    idx = torch.sort(torch.randint(
-        0, self.L - indices_to_pick, (self.batch_size, indices_to_pick)
-    ), axis=1).values + torch.arange(0, indices_to_pick).reshape(1, -1)
-    idx = idx.to(x)
-    x = torch.scatter(x,dim=-1,index=idx, src=mask)
+    mm = torch.ones_like(mask)
+    if self.L > indices_to_pick:
+        idx = torch.sort(torch.randint(
+            0, self.L - indices_to_pick, (self.batch_size, indices_to_pick)
+        ), axis=1).values + torch.arange(0, indices_to_pick).reshape(1, -1)
+        idx = idx.to(x)
+        x = torch.scatter(x,dim=-1,index=idx, src=mask)
+    else:
+        x = self.mask.clone()
+        idx = torch.arange(0, indices_to_pick).reshape(1, -1).to(x)
     if noised_indices > 0:
         idx2 = torch.multinomial(torch.ones(self.batch_size, indices_to_pick),noised_indices)
         idx2 = idx2.to(x)
-        x = torch.scatter(x,dim=-1,index=idx[torch.arange(len(idx)).unsqueeze(-1),idx2],src=noise_mask)
-    return x
+        x2 = torch.scatter(x,dim=-1,index=idx[torch.arange(len(idx)).unsqueeze(-1),idx2],src=noise_mask)
+    return x2,x
   
   def __call__(self, x: torch.Tensor, step: int):
     return self.sample(x,step)
-
