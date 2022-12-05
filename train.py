@@ -14,7 +14,7 @@ import pickle
 import argparse
 
 class LitAutoEncoder(pl.LightningModule):
-    def __init__(self, code=1024, depth=8, length=512, model_dim=128, model_enc_layers = 6, causal = False, chunk = 512, steps=50, batch=4, initial_lr=5e-4,**kwargs):
+    def __init__(self, code=1024, depth=8, length=512, model_dim=128, model_qk_dim=64, model_enc_layers = 6, causal = False, chunk = 512, steps=50, batch=4, initial_lr=5e-4,**kwargs):
         super().__init__()
         codebook_size=code
         codebook_num=depth
@@ -30,7 +30,7 @@ class LitAutoEncoder(pl.LightningModule):
         dim = model_dim,                   # model dimensions
         depth = model_enc_layers,                   # depth
         ema_heads = 16,              # number of EMA heads
-        attn_dim_qk = model_dim,            # dimension of queries / keys in attention
+        attn_dim_qk = model_qk_dim,            # dimension of queries / keys in attention
         attn_dim_value = model_dim*2,        # dimensino of values in attention
         laplacian_attn_fn = True,    # whether to use softmax (false) or laplacian attention activation fn (true)
         causal=causal,
