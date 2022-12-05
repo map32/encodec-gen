@@ -64,7 +64,7 @@ class LitAutoEncoder(pl.LightningModule):
       x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
       x_pred = self.denoiser(x_masknoised).permute(0,2,1)
       print(x_masked.shape,x_pred.shape,x_masked,x_pred)
-      loss = self.criterion(x_pred,x_masked)
+      loss = self.criterion(x_pred,x)
       self.log('train_loss', loss)
       return loss
 
@@ -76,7 +76,7 @@ class LitAutoEncoder(pl.LightningModule):
       x = x.view(x.size(0), -1)
       x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
       x_pred = self.denoiser(x_masknoised).permute(0,2,1)
-      loss = self.criterion(x_pred,x_masked)
+      loss = self.criterion(x_pred,x)
       self.log('val_loss', loss)
       return loss
 
