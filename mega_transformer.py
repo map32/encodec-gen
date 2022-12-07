@@ -359,10 +359,11 @@ class Mega(nn.Module):
     ):
         super().__init__()
         self.token_emb = nn.Embedding(num_tokens*codebook_size+1, dim)
-        self.pos_enc = Summer(PositionalEncoding1D(dim)) if pos_enc else nn.Identity()
+        self.pos_enc = Summer(PositionalEncoding2D(dim))
         self.pre_norm = pre_norm
         self.ff = torch.tensor([num_tokens*n for n in range(codebook_size)]).unsqueeze(0).unsqueeze(-1)
         self.layers = nn.ModuleList([])
+        self.codebook_size = codebook_size
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
                 MegaLayer(dim = dim, **kwargs),
@@ -372,8 +373,9 @@ class Mega(nn.Module):
             ]))
 
         self.to_logits = nn.Sequential(
-            nn.LayerNorm(dim) if pre_norm else nn.Identity(),
-            nn.Linear(dim, num_tokens*codebook_size)
+            nn.Linear(dim, num_tokens*codebook_size*ff_mult),
+            nn.GELU(),
+            nn.Linear(num_tokens*codebook_size*ff_mult, num_tokens*codebook_size)
         )
 
     def preprocess(self,x):
@@ -386,7 +388,8 @@ class Mega(nn.Module):
         pre_norm = self.pre_norm
         post_norm = not self.pre_norm
         x = x.int()
-        x = self.token_emb(x)
+        x = rearrange(self.token_emb(x), 'b (l q) d -> b l q d', q=self.codebook_size)
+        x = rearrange(self.pos_enc(x), 'b l q d -> b (l q) d')
 
         for mega_layer, mega_norm, ff, ff_norm in self.layers:
             mega_maybe_prenorm = mega_norm if pre_norm else identity
