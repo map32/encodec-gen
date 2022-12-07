@@ -36,7 +36,7 @@ class LitAutoEncoder(pl.LightningModule):
         causal=causal,
         codebook_size = depth,
         chunk_size = chunk)
-        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1,ignore_index=code*depth)
         self.lr = initial_lr
         self.batch = batch
 
@@ -46,11 +46,10 @@ class LitAutoEncoder(pl.LightningModule):
       if nmask is None:
             nmask = torch.randint_like(x,self.sampler.token_size)
       x = x.view(x.size(0), -1)
-      print(x.shape)
-      x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
+      x_masknoised, targets = self.sampler.add_noise(x,t,nmask)
       x_pred = self.denoiser(x_masknoised).permute(0,2,1)
-      loss = self.criterion(x_pred,x)
-      return x_pred,x_masknoised,x_masked,loss
+      loss = self.criterion(x_pred,targets)
+      return x_pred,x_masknoised,targets,loss
 
     def configure_optimizers(self):
       return torch.optim.AdamW(self.parameters(), lr=self.lr, eps=3e-7, weight_decay=1e-3)
@@ -58,12 +57,11 @@ class LitAutoEncoder(pl.LightningModule):
     def training_step(self, train_batch, batch_idx):
       tmax = self.global_step // 1000 + 1
       x = train_batch
-      #t = torch.randint(1,self.sampler.steps+1,(1,)).clip(max=tmax).item()
-      t = tmax
+      t = torch.randint(1,min(tmax,self.sampler.steps-1)+1,(1,)).item()
       x = self.denoiser.preprocess(x)
       nmask = torch.randint_like(x,self.sampler.token_size)
       x = x.view(x.size(0), -1)
-      x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
+      x_masknoised, targets = self.sampler.add_noise(x,t,nmask)
       x_pred = self.denoiser(x_masknoised).permute(0,2,1)
       loss = self.criterion(x_pred,x)
       self.log('train_loss', loss)
@@ -72,12 +70,11 @@ class LitAutoEncoder(pl.LightningModule):
     def validation_step(self, val_batch, batch_idx):
       tmax = self.global_step // 1000 + 1
       x = val_batch
-      #t = torch.randint(1,self.sampler.steps+1,(1,)).clip(max=tmax).item()
-      t = tmax
+      t = torch.randint(1,min(tmax,self.sampler.steps-1)+1,(1,)).clip(max=tmax).item()
       x = self.denoiser.preprocess(x)
       nmask = torch.randint_like(x,self.sampler.token_size)
       x = x.view(x.size(0), -1)
-      x_masknoised, x_masked = self.sampler.add_noise(x,t,nmask)
+      x_masknoised, targets = self.sampler.add_noise(x,t,nmask)
       x_pred = self.denoiser(x_masknoised).permute(0,2,1)
       loss = self.criterion(x_pred,x)
       self.log('val_loss', loss)
@@ -99,16 +96,16 @@ if __name__ == '__main__':
     parser.add_argument('filepath')
     parser.add_argument('-c','--code',default=1024)
     parser.add_argument('-d','--depth',default=4)
-    parser.add_argument('-l','--length',default=1024)
+    parser.add_argument('-l','--length',default=512)
     parser.add_argument('-b','--batch',default=4)
-    parser.add_argument('-m','--model_dim',default=128)
+    parser.add_argument('-m','--model_dim',default=256)
     parser.add_argument('-ml','--model_enc_layers',default=6)
-    parser.add_argument('-ch','--chunk',default=512)
+    parser.add_argument('-ch','--chunk',default=1024)
     parser.add_argument('-ca','--causal',default=False)
-    parser.add_argument('-lr','--initial_lr',default=5e-4)
+    parser.add_argument('-lr','--initial_lr',default=1e-4)
     parser.add_argument('-ck','--checkpoint_steps',default=1000)
     parser.add_argument('-w','--warmup_steps',default=5000)
-    parser.add_argument('-s','--save_path',default='/content/drive/MyDrive/models')
+    parser.add_argument('-s','--save_path',default='/content/drive/MyDrive/models2')
     args = parser.parse_args()
     assert args.length*args.depth % args.chunk == 0
 
@@ -130,17 +127,16 @@ if __name__ == '__main__':
     train_loader = DataLoader(train, batch_sampler=RepeatingSampler(train,args.batch,shuffle=True))
     val_loader = DataLoader(val, batch_sampler=RepeatingSampler(val,args.batch,shuffle=False))
     
-    callbacks=[ModelCheckpoint(dirpath=args.save_path,monitor='train_loss',mode='min',every_n_train_steps=args.checkpoint_steps)]
+    callbacks=[ModelCheckpoint(dirpath=args.save_path,monitor='train_loss',mode='min',every_n_train_steps=args.checkpoint_steps,save_top_k=-1)]
     
     trainer = Trainer(
         accelerator='gpu',
-        devices=1,
-        max_steps=1000*30,
+        devices=-1,
         callbacks=callbacks,
         amp_backend="native",
-        gradient_clip_val=0.7
+        gradient_clip_val=1.0
     )
     print(train[0].shape)
-    trainer.fit(model, train_loader, val_loader)
+    trainer.fit(model, train_loader, val_loader, ckpt_path='/content/drive/MyDrive/models2/epoch=0-step=10000.ckpt')
     
 
