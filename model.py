@@ -51,7 +51,7 @@ class LitAutoEncoder(pl.LightningModule):
       return x_pred
     
     def sample(self, x_pred_prob):
-        dist = torch.distributions.Categorical(x_pred_prob)
+        dist = torch.distributions.Categorical(logits=x_pred_prob,validate_args=False)
         return dist.sample()
 
     def configure_optimizers(self):
